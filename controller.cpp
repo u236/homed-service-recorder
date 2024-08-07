@@ -52,7 +52,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
             case Command::restartService:
             {
                 logWarning << "Restart request received...";
-                mqttPublish(mqttTopic("command/recorder"), QJsonObject(), true);
+                mqttPublish(topic.name(), QJsonObject(), true);
                 QCoreApplication::exit(EXIT_RESTART);
                 break;
             }
