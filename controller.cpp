@@ -13,7 +13,7 @@ Controller::Controller(const QString &configFile) : HOMEd(configFile), m_databas
 Device Controller::findDevice(const QString &search)
 {
     for (auto it = m_devices.begin(); it != m_devices.end(); it++)
-        if (search.startsWith(it.value()->key()) || search.startsWith(it.value()->topic()))
+        if (search == it.value()->key() || search.startsWith(it.value()->key().append('/')) || search == it.value()->topic() || search.startsWith(it.value()->topic().append('/')))
             return it.value();
 
     return Device();
@@ -153,7 +153,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
             key = QString("%1/%2").arg(type, id);
             topic = QString("%1/%2").arg(service, names ? name : id);
 
-            if (names && m_devices.contains(key) && m_devices.value(key)->topic() != topic)
+            if (m_devices.contains(key) && m_devices.value(key)->topic() != topic)
             {
                 const Device &device = m_devices.value(key);
                 mqttUnsubscribe(mqttTopic("device/%1").arg(device->topic()));
