@@ -32,7 +32,7 @@ void Controller::publishItems(void)
 void Controller::mqttConnected(void)
 {
     mqttSubscribe(mqttTopic("command/recorder"));
-    mqttSubscribe(mqttTopic("status/#"));
+    mqttSubscribe(mqttTopic("service/#"));
 
     m_devices.clear();
     publishItems();
@@ -122,6 +122,42 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
             }
         }
     }
+    else if (subTopic.startsWith("service/"))
+    {
+        QString type = subTopic.split('/').value(1), service = subTopic.mid(subTopic.indexOf('/') + 1);
+
+        if (!m_types.contains(type))
+           return;
+
+        if (json.value("status").toString() == "online")
+        {
+            mqttSubscribe(mqttTopic("status/%1").arg(service));
+            return;
+        }
+
+        for (auto it = m_devices.begin(); it != m_devices.end(); it++)
+        {
+            const Device &device = it.value();
+
+            if (!device->topic().startsWith(QString("%1/").arg(service)))
+               continue;
+
+            for (auto it = m_database->items().begin(); it != m_database->items().end(); it++)
+            {
+                if (!it.key().startsWith(device->key()))
+                    continue;
+
+                m_database->insertData(it.value(), UNAVAILABLE_STRING);
+            }
+
+            mqttUnsubscribe(mqttTopic("device/%1").arg(device->topic()));
+            mqttUnsubscribe(mqttTopic("fd/%1").arg(device->topic()));
+            mqttUnsubscribe(mqttTopic("fd/%1/#").arg(device->topic()));
+            device->clearTopic();
+        }
+
+        mqttUnsubscribe(mqttTopic("status/%1").arg(service));
+    }
     else if (subTopic.startsWith("status/"))
     {
         QString type = subTopic.split('/').value(1), service = subTopic.mid(subTopic.indexOf('/') + 1);
@@ -156,9 +192,14 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
             if (m_devices.contains(key) && m_devices.value(key)->topic() != topic)
             {
                 const Device &device = m_devices.value(key);
-                mqttUnsubscribe(mqttTopic("device/%1").arg(device->topic()));
-                mqttUnsubscribe(mqttTopic("fd/%1").arg(device->topic()));
-                mqttUnsubscribe(mqttTopic("fd/%1/#").arg(device->topic()));
+
+                if (!device->topic().isEmpty())
+                {
+                    mqttUnsubscribe(mqttTopic("device/%1").arg(device->topic()));
+                    mqttUnsubscribe(mqttTopic("fd/%1").arg(device->topic()));
+                    mqttUnsubscribe(mqttTopic("fd/%1/#").arg(device->topic()));
+                }
+
                 device->setTopic(topic);
                 check = true;
             }
