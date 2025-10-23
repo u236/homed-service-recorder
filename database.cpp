@@ -6,7 +6,7 @@ bool ItemObject::skip(qint64 timestamp, double value)
     if (timestamp < m_timestamp + m_debounce * 1000)
     {
         double check = m_value.toDouble();
-        return (check < value && check + m_threshold > value) || (check > value && check - m_threshold < value);
+        return !m_threshold || (check < value && check + m_threshold > value) || (check > value && check - m_threshold < value);
     }
 
     return false;
