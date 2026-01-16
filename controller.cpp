@@ -250,7 +250,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
     {
         const Device &device = findDevice(subTopic.mid(subTopic.indexOf('/') + 1));
 
-        if (!device.isNull())
+        if (!device.isNull() && device->available())
         {
             quint8 endpointId = static_cast <quint8> (subTopic.split('/').last().toInt());
             QString key = endpointId ? QString("%1/%2").arg(device->key()).arg(endpointId) : device->key();
