@@ -1,0 +1,6 @@
+#!/bin/sh
+
+/etc/init.d/homed-recorder stop
+/etc/init.d/homed-recorder disable
+
+exit 0
