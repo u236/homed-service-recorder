@@ -1,7 +1,0 @@
-pkgname = homed-recorder
-pkgver =
-arch =
-pkgdesc = HOMEd Recorder Service
-maintainer = u236 <mail@u236.org>
-depend = homed-qt
-backup = etc/homed/homed-recorder.conf

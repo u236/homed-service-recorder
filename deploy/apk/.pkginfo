@@ -1,0 +1,4 @@
+name = homed-recorder
+description = HOMEd Recorder Service
+maintainer = u236 <mail@u236.org>
+depends = homed-qt
