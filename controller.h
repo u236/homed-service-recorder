@@ -62,7 +62,6 @@ private:
     Database *m_database;
     QMetaEnum m_commands;
 
-    QList <QString> m_types;
     QMap <QString, Device> m_devices;
 
     Device findDevice(const QString &search);
