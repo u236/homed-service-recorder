@@ -3,7 +3,7 @@
 
 Controller::Controller(const QString &configFile) : HOMEd(SERVICE_VERSION, configFile), m_database(new Database(getConfig(), this)), m_commands(QMetaEnum::fromType <Command> ())
 {
-    m_types = {"zigbee", "modbus", "custom"};
+    m_types = {"zigbee", "modbus", "custom", "matter", "ble"};
     connect(m_database, &Database::itemAdded, this, &Controller::itemAdded);
 }
 
