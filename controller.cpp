@@ -123,7 +123,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
     {
         QString type = subTopic.split('/').value(1), service = subTopic.mid(subTopic.indexOf('/') + 1);
 
-        if (!deviceServices().contains(type))
+        if (coreServices().contains(type))
            return;
 
         if (json.value("status").toString() == "online")
@@ -161,7 +161,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
         QJsonArray devices = json.value("devices").toArray();
         bool names = json.value("names").toBool();
 
-        if (!deviceServices().contains(type))
+        if (coreServices().contains(type))
             return;
 
         for (auto it = devices.begin(); it != devices.end(); it++)
