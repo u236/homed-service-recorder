@@ -1,7 +1,7 @@
 #ifndef CONTROLLER_H
 #define CONTROLLER_H
 
-#define SERVICE_VERSION     "1.0.11"
+#define SERVICE_VERSION     "1.0.12"
 
 #include "database.h"
 #include "homed.h"

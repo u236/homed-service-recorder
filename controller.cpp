@@ -33,7 +33,7 @@ void Controller::mqttConnected(void)
     m_devices.clear();
     publishItems();
 
-    mqttPublishStatus();
+    mqttPublishService();
 }
 
 void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &topic)
