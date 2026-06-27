@@ -111,7 +111,7 @@ void Database::insertData(const Item &item, const QString &value)
         }
     }
 
-    if (item->timestamp() > timestamp || (item->value() == value && !m_trigger.contains(item->property())) || item->skip(timestamp, value.toDouble()))
+    if (item->timestamp() > timestamp || (item->value() == value && !m_trigger.contains(item->property().split('_').value(0))) || item->skip(timestamp, value.toDouble()))
     {
         if (m_debug)
             logInfo << "Endpoint" << item->endpoint() << "property" << item->property() << "value" << value << "ignored";
