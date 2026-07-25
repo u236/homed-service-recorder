@@ -111,7 +111,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
                         value.append(record.max.toDouble() - record.min.toDouble());
                     }
 
-                    mqttPublish(mqttTopic("recorder"), {{"id", json.value("id").toString()}, {"time", QDateTime::currentMSecsSinceEpoch() - time}, {"timestamp", timestamp}, {"value", value}});
+                    mqttPublish(mqttTopic("recorder"), {{"id", json.value("id").toString()}, {"time", QDateTime::currentMSecsSinceEpoch() - time}, {"timestamp", timestamp}, {"value", value}, {"change", true}});
                 }
                 else
                 {
