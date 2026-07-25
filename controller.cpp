@@ -108,7 +108,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
                     {
                         const Database::HourRecord &record = hourList.at(i);
                         timestamp.append(record.timestamp);
-                        value.append(record.max.toDouble() - record.min.toDouble());
+                        value.append((i < hourList.count() - 1 ? hourList.at(i + 1).min.toDouble() : record.max.toDouble()) - record.min.toDouble());
                     }
 
                     mqttPublish(mqttTopic("recorder"), {{"id", json.value("id").toString()}, {"time", QDateTime::currentMSecsSinceEpoch() - time}, {"timestamp", timestamp}, {"value", value}, {"change", true}});
