@@ -78,7 +78,7 @@ public:
     bool removeItem(const QString &endpoint, const QString &property);
 
     void insertData(const Item &item, const QString &value);
-    void getData(const Item &item, qint64 start, qint64 end, QList <DataRecord> &dataList, QList <HourRecord> &hourList);
+    void getData(const Item &item, qint64 start, qint64 end, bool change, QList <DataRecord> &dataList, QList <HourRecord> &hourList);
 
 private:
 

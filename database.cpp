@@ -128,14 +128,14 @@ void Database::insertData(const Item &item, const QString &value)
     item->setValue(value);
 }
 
-void Database::getData(const Item &item, qint64 start, qint64 end, QList <DataRecord> &dataList, QList <HourRecord> &hourList)
+void Database::getData(const Item &item, qint64 start, qint64 end, bool change, QList <DataRecord> &dataList, QList <HourRecord> &hourList)
 {
     QSqlQuery query(m_db);
     QString queryString;
     bool check = false;
     qint64 last = 0;
 
-    if (start && m_days >= (QDateTime::currentMSecsSinceEpoch() - start) / 86400000)
+    if (start && m_days >= (QDateTime::currentMSecsSinceEpoch() - start) / 86400000 && !change)
     {
         queryString = QString("SELECT timestamp, value FROM data WHERE item_id = %1").arg(item->id());
         query.exec(QString(queryString).append(" AND timestamp <= %1 ORDER BY id DESC LIMIT 1").arg(start));
