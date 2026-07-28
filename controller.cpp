@@ -254,11 +254,12 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
     }
     else if (subTopic.startsWith("fd/"))
     {
-        const Device &device = findDevice(subTopic.mid(subTopic.indexOf('/') + 1));
+        QString string = subTopic.mid(subTopic.indexOf('/') + 1);
+        const Device &device = findDevice(string);
 
         if (!device.isNull() && device->available())
         {
-            quint8 endpointId = static_cast <quint8> (subTopic.split('/').last().toInt());
+            quint8 endpointId = static_cast <quint8> (string.mid(device->topic().length() + 1).toInt());
             QString key = endpointId ? QString("%1/%2").arg(device->key()).arg(endpointId) : device->key();
 
             for (auto it = json.begin(); it != json.end(); it++)
