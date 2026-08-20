@@ -84,6 +84,7 @@ private:
 
     QTimer *m_timer;
     QSqlDatabase m_db;
+    QString m_schema;
     quint16 m_days;
     bool m_debug;
 

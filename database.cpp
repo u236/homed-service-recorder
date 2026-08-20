@@ -12,8 +12,9 @@ bool ItemObject::skip(qint64 timestamp, double value)
     return false;
 }
 
-Database::Database(QSettings *config, QObject *parent) : QObject(parent), m_timer(new QTimer(this)), m_db(QSqlDatabase::addDatabase("QSQLITE", "db"))
+Database::Database(QSettings *config, QObject *parent) : QObject(parent), m_timer(new QTimer(this)), m_db(QSqlDatabase::addDatabase("QSQLITE", "db")), m_schema("main")
 {
+    QString data = config->value("database/data").toString();
     QSqlQuery query(m_db);
 
     m_db.setDatabaseName(config->value("database/file", "/opt/homed-recorder/homed-recorder.db").toString());
@@ -32,13 +33,24 @@ Database::Database(QSettings *config, QObject *parent) : QObject(parent), m_time
         return;
     }
 
-    query.exec("CREATE TABLE IF NOT EXISTS item (id INTEGER PRIMARY KEY AUTOINCREMENT, endpoint TEXT NOT NULL, property TEXT NOT NULL, debounce INTEGER NOT NULL, threshold REAL NOT NULL)");
-    query.exec("CREATE TABLE IF NOT EXISTS data (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER REFERENCES item(id) ON DELETE CASCADE, timestamp INTEGER NOT NULL, value TEXT NOT NULL)");
-    query.exec("CREATE TABLE IF NOT EXISTS hour (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER REFERENCES item(id) ON DELETE CASCADE, timestamp INTEGER NOT NULL, avg REAL NOT NULL, min REAL NOT NULL, max REAL NOT NULL)");
-    query.exec("CREATE UNIQUE INDEX item_index ON item (endpoint, property)");
+    if (!data.isEmpty())
+    {
+        if (!query.exec(QString("ATTACH DATABASE '%1' AS data").arg(data)))
+        {
+            logWarning << "Failed to attach database" << data << "for data storage";
+            return;
+        }
 
-    query.exec("PRAGMA foreign_keys = ON");
-    query.exec("SELECT * FROM item");
+        logInfo << "Using database" << data << "for data storage";
+        m_schema = "data";
+    }
+
+    query.exec("CREATE TABLE IF NOT EXISTS main.item (id INTEGER PRIMARY KEY AUTOINCREMENT, endpoint TEXT NOT NULL, property TEXT NOT NULL, debounce INTEGER NOT NULL, threshold REAL NOT NULL)");
+    query.exec(QString("CREATE TABLE IF NOT EXISTS %1.data (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, timestamp INTEGER NOT NULL, value TEXT NOT NULL)").arg(m_schema));
+    query.exec(QString("CREATE TABLE IF NOT EXISTS %1.hour (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, timestamp INTEGER NOT NULL, avg REAL NOT NULL, min REAL NOT NULL, max REAL NOT NULL)").arg(m_schema));
+    query.exec("CREATE UNIQUE INDEX main.item_index ON item (endpoint, property)");
+
+    query.exec("SELECT * FROM main.item");
 
     while (query.next())
     {
@@ -66,7 +78,7 @@ bool Database::updateItem(const QString &endpoint, const QString &property, quin
     {
         const Item &item = m_items.value(key);
 
-        if (!query.exec(QString("UPDATE item SET debounce = %1, threshold = %2 WHERE id = %3").arg(debounce).arg(threshold).arg(item->id())))
+        if (!query.exec(QString("UPDATE main.item SET debounce = %1, threshold = %2 WHERE id = %3").arg(debounce).arg(threshold).arg(item->id())))
             return false;
 
         item->setDebounce(debounce);
@@ -74,7 +86,7 @@ bool Database::updateItem(const QString &endpoint, const QString &property, quin
     }
     else
     {
-        if (!query.exec(QString("INSERT INTO item (endpoint, property, debounce, threshold) VALUES ('%1', '%2', %3, %4)").arg(endpoint, property).arg(debounce).arg(threshold)))
+        if (!query.exec(QString("INSERT INTO main.item (endpoint, property, debounce, threshold) VALUES ('%1', '%2', %3, %4)").arg(endpoint, property).arg(debounce).arg(threshold)))
             return false;
 
         m_items.insert(key, Item(new ItemObject(static_cast <qint32> (query.lastInsertId().toInt()), endpoint, property, debounce, threshold)));
@@ -89,8 +101,11 @@ bool Database::removeItem(const QString &endpoint, const QString &property)
     auto it = m_items.find(QString("%1/%2").arg(endpoint, property));
     QSqlQuery query(m_db);
 
-    if (it == m_items.end() || !query.exec(QString("DELETE FROM item WHERE id = %1").arg(it.value()->id())))
+    if (it == m_items.end() || !query.exec(QString("DELETE FROM main.item WHERE id = %1").arg(it.value()->id())))
         return false;
+
+    query.exec(QString("DELETE FROM %1.data WHERE item_id = %2").arg(m_schema).arg(it.value()->id()));
+    query.exec(QString("DELETE FROM %1.hour WHERE item_id = %2").arg(m_schema).arg(it.value()->id()));
 
     m_items.erase(it);
     return true;
@@ -102,7 +117,7 @@ void Database::insertData(const Item &item, const QString &value)
 
     if (!item->timestamp())
     {
-        QSqlQuery query(QString("SELECT timestamp, value FROM data WHERE item_id = %1 ORDER BY id DESC LIMIT 1").arg(item->id()), m_db);
+        QSqlQuery query(QString("SELECT timestamp, value FROM %1.data WHERE item_id = %2 ORDER BY id DESC LIMIT 1").arg(m_schema).arg(item->id()), m_db);
 
         if (query.first())
         {
@@ -137,7 +152,7 @@ void Database::getData(const Item &item, qint64 start, qint64 end, bool change, 
 
     if (start && m_days >= (QDateTime::currentMSecsSinceEpoch() - start) / 86400000 && !change)
     {
-        queryString = QString("SELECT timestamp, value FROM data WHERE item_id = %1").arg(item->id());
+        queryString = QString("SELECT timestamp, value FROM %1.data WHERE item_id = %2").arg(m_schema).arg(item->id());
         query.exec(QString(queryString).append(" AND timestamp <= %1 ORDER BY id DESC LIMIT 1").arg(start));
 
         if (query.first())
@@ -146,7 +161,7 @@ void Database::getData(const Item &item, qint64 start, qint64 end, bool change, 
         check = true;
     }
     else
-        queryString = QString("SELECT timestamp, avg, min, max FROM hour WHERE item_id = %1").arg(item->id());
+        queryString = QString("SELECT timestamp, avg, min, max FROM %1.hour WHERE item_id = %2").arg(m_schema).arg(item->id());
 
     if (start)
         queryString.append(QString(" AND timestamp > %1").arg(start));
@@ -182,7 +197,7 @@ void Database::update(void)
     while (!m_dataQueue.isEmpty())
     {
         DataRecord record = m_dataQueue.dequeue();
-        query.exec(QString("INSERT INTO data (item_id, timestamp, value) VALUES (%1, %2, '%3')").arg(record.id).arg(record.timestamp).arg(record.value));
+        query.exec(QString("INSERT INTO %1.data (item_id, timestamp, value) VALUES (%2, %3, '%4')").arg(m_schema).arg(record.id).arg(record.timestamp).arg(record.value));
     }
 
     query.exec("COMMIT");
@@ -190,15 +205,15 @@ void Database::update(void)
     if (timestamp % 3600)
         return;
 
-    query.exec("SELECT count(*) from data");
+    query.exec(QString("SELECT count(*) from %1.data").arg(m_schema));
 
     if (query.first() && query.value(0).toInt() > DATA_INDEX_LIMIT)
     {
-        query.exec("CREATE INDEX data_index ON data (item_id, timestamp)");
-        query.exec("REINDEX data");
+        query.exec(QString("CREATE INDEX %1.data_index ON data (item_id, timestamp)").arg(m_schema));
+        query.exec(QString("REINDEX %1.data").arg(m_schema));
     }
 
-    query.exec(QString("SELECT item.id, AVG(data.value), MIN(data.value), MAX(data.value) FROM item LEFT JOIN data ON data.item_id = item.id AND data.timestamp > %1 GROUP by item.id").arg((timestamp - 3600) * 1000));
+    query.exec(QString("SELECT item.id, AVG(data.value), MIN(data.value), MAX(data.value) FROM main.item item LEFT JOIN %1.data data ON data.item_id = item.id AND data.timestamp > %2 GROUP by item.id").arg(m_schema).arg((timestamp - 3600) * 1000));
 
     while (query.next())
     {
@@ -218,12 +233,12 @@ void Database::update(void)
         }
         else
         {
-            QSqlQuery query(QString("SELECT value FROM data WHERE item_id = %1 ORDER BY id DESC limit 1").arg(id), m_db);
+            QSqlQuery query(QString("SELECT value FROM %1.data WHERE item_id = %2 ORDER BY id DESC limit 1").arg(m_schema).arg(id), m_db);
 
             if (!query.first() || query.value(0).toString() == UNAVAILABLE_STRING)
                 continue;
 
-            query.exec(QString("SELECT avg, min, max FROM hour WHERE item_id = %1 ORDER BY id DESC limit 1").arg(id));
+            query.exec(QString("SELECT avg, min, max FROM %1.hour WHERE item_id = %2 ORDER BY id DESC limit 1").arg(m_schema).arg(id));
 
             if (!query.first())
                 continue;
@@ -237,7 +252,7 @@ void Database::update(void)
     while (!m_hourQueue.isEmpty())
     {
         const HourRecord &record = m_hourQueue.dequeue();
-        query.exec(QString("INSERT INTO hour (item_id, timestamp, avg, min, max) VALUES (%1, %2, %3, %4, %5)").arg(record.id).arg(record.timestamp).arg(record.avg, record.min, record.max));
+        query.exec(QString("INSERT INTO %1.hour (item_id, timestamp, avg, min, max) VALUES (%2, %3, %4, %5, %6)").arg(m_schema).arg(record.id).arg(record.timestamp).arg(record.avg, record.min, record.max));
     }
 
     query.exec("COMMIT");
@@ -246,6 +261,6 @@ void Database::update(void)
     if (QDateTime::currentDateTime().time().hour())
         return;
 
-    query.exec(QString("DELETE FROM data WHERE timestamp < %1 AND ID NOT IN (SELECT MAX(id) FROM data WHERE timestamp < %1 GROUP BY item_id)").arg((timestamp - m_days * 86400) * 1000));
-    query.exec("VACUUM");
+    query.exec(QString("DELETE FROM %1.data WHERE timestamp < %2 AND ID NOT IN (SELECT MAX(id) FROM %1.data WHERE timestamp < %2 GROUP BY item_id)").arg(m_schema).arg((timestamp - m_days * 86400) * 1000));
+    query.exec(QString("VACUUM %1").arg(m_schema));
 }
