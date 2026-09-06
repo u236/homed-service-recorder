@@ -89,7 +89,7 @@ bool Database::updateItem(const QString &endpoint, const QString &property, quin
         if (!query.exec(QString("INSERT INTO main.item (endpoint, property, debounce, threshold) VALUES ('%1', '%2', %3, %4)").arg(endpoint, property).arg(debounce).arg(threshold)))
             return false;
 
-        m_items.insert(key, Item(new ItemObject(static_cast <qint32> (query.lastInsertId().toInt()), endpoint, property, debounce, threshold)));
+        m_items.insert(key, Item(new ItemObject(query.lastInsertId().toInt(), endpoint, property, debounce, threshold)));
         emit itemAdded(m_items.value(key));
     }
 
