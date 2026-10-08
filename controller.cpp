@@ -107,8 +107,16 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
                     for (int i = 0; i < hourList.count(); i++)
                     {
                         const Database::HourRecord &record = hourList.at(i);
+                        bool next = i < hourList.count() - 1, hole = next && hourList.at(i + 1).timestamp - record.timestamp > 3600000;
+
                         timestamp.append(record.timestamp);
-                        value.append((i < hourList.count() - 1 ? hourList.at(i + 1).min.toDouble() : record.max.toDouble()) - record.min.toDouble());
+                        value.append((next && !hole ? hourList.at(i + 1).min.toDouble() : record.max.toDouble()) - record.min.toDouble());
+
+                        if (!hole)
+                            continue;
+
+                        timestamp.append(hourList.at(i + 1).timestamp - 3600000);
+                        value.append(hourList.at(i + 1).min.toDouble() - record.max.toDouble());
                     }
 
                     mqttPublish(mqttTopic("recorder"), {{"id", json.value("id").toString()}, {"time", QDateTime::currentMSecsSinceEpoch() - time}, {"timestamp", timestamp}, {"value", value}, {"change", true}});
@@ -155,7 +163,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
 
             for (auto it = m_database->items().begin(); it != m_database->items().end(); it++)
             {
-                if (!it.key().startsWith(device->key()))
+                if (!it.key().startsWith(device->key().append('/')))
                     continue;
 
                 m_database->insertData(it.value(), UNAVAILABLE_STRING);
@@ -164,7 +172,9 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
             mqttUnsubscribe(mqttTopic("device/%1").arg(device->topic()));
             mqttUnsubscribe(mqttTopic("fd/%1").arg(device->topic()));
             mqttUnsubscribe(mqttTopic("fd/%1/#").arg(device->topic()));
+
             device->clearTopic();
+            device->setAvailable(false);
         }
 
         mqttUnsubscribe(mqttTopic("status/%1").arg(service));
@@ -245,7 +255,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
 
             for (auto it = m_database->items().begin(); it != m_database->items().end(); it++)
             {
-                if (!it.key().startsWith(device->key()))
+                if (!it.key().startsWith(device->key().append('/')))
                     continue;
 
                 m_database->insertData(it.value(), UNAVAILABLE_STRING);

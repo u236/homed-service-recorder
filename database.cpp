@@ -86,7 +86,7 @@ bool Database::updateItem(const QString &endpoint, const QString &property, quin
     }
     else
     {
-        if (!query.exec(QString("INSERT INTO main.item (endpoint, property, debounce, threshold) VALUES ('%1', '%2', %3, %4)").arg(endpoint, property).arg(debounce).arg(threshold)))
+        if (!query.exec(QString("INSERT INTO main.item (endpoint, property, debounce, threshold) VALUES ('%1', '%2', %3, %4)").arg(sqlSafe(endpoint), sqlSafe(property)).arg(debounce).arg(threshold)))
             return false;
 
         m_items.insert(key, Item(new ItemObject(query.lastInsertId().toInt(), endpoint, property, debounce, threshold)));
@@ -126,7 +126,7 @@ void Database::insertData(const Item &item, const QString &value)
         }
     }
 
-    if (item->timestamp() > timestamp || (item->value() == value && !m_trigger.contains(item->property().split('_').value(0))) || item->skip(timestamp, value.toDouble()))
+    if (item->timestamp() > timestamp || (item->value() == value && !m_trigger.contains(item->property().split('_').value(0))) || (value != UNAVAILABLE_STRING && item->value() != UNAVAILABLE_STRING && item->skip(timestamp, value.toDouble())))
     {
         if (m_debug)
             logInfo << "Endpoint" << item->endpoint() << "property" << item->property() << "value" << value << "ignored";
@@ -197,7 +197,7 @@ void Database::update(void)
     while (!m_dataQueue.isEmpty())
     {
         DataRecord record = m_dataQueue.dequeue();
-        query.exec(QString("INSERT INTO %1.data (item_id, timestamp, value) VALUES (%2, %3, '%4')").arg(m_schema).arg(record.id).arg(record.timestamp).arg(record.value));
+        query.exec(QString("INSERT INTO %1.data (item_id, timestamp, value) VALUES (%2, %3, '%4')").arg(m_schema).arg(record.id).arg(record.timestamp).arg(sqlSafe(record.value)));
     }
 
     query.exec("COMMIT");
@@ -213,7 +213,7 @@ void Database::update(void)
         query.exec(QString("REINDEX %1.data").arg(m_schema));
     }
 
-    query.exec(QString("SELECT item.id, AVG(data.value), MIN(data.value), MAX(data.value) FROM main.item item LEFT JOIN %1.data data ON data.item_id = item.id AND data.timestamp > %2 GROUP by item.id").arg(m_schema).arg((timestamp - 3600) * 1000));
+    query.exec(QString("SELECT item.id, AVG(data.value), MIN(CAST(data.value AS REAL)), MAX(CAST(data.value AS REAL)), MIN(data.value), MAX(data.value) FROM main.item item LEFT JOIN %1.data data ON data.item_id = item.id AND data.timestamp > %2 AND data.value != '%3' GROUP by item.id").arg(m_schema).arg((timestamp - 3600) * 1000).arg(UNAVAILABLE_STRING));
 
     while (query.next())
     {
@@ -223,13 +223,13 @@ void Database::update(void)
         {
             bool min, max;
 
-            query.value(2).toString().toDouble(&min);
-            query.value(3).toString().toDouble(&max);
+            query.value(4).toString().toDouble(&min);
+            query.value(5).toString().toDouble(&max);
 
             if (!min || !max)
                 continue;
 
-            m_hourQueue.enqueue({id, timestamp * 1000, query.value(1).toString(), query.value(2).toString(),query.value(3).toString()});
+            m_hourQueue.enqueue({id, timestamp * 1000, query.value(1).toString(), query.value(2).toString(), query.value(3).toString()});
         }
         else
         {

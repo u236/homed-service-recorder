@@ -4,6 +4,8 @@
 #define UNAVAILABLE_STRING  "[unavailable]"
 #define DATA_INDEX_LIMIT    100000
 
+#define sqlSafe(string)     QString(string).replace("'", "''")
+
 #include <QtSql>
 
 class ItemObject;
