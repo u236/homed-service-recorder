@@ -82,10 +82,10 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
                 QList <Database::DataRecord> dataList;
                 QList <Database::HourRecord> hourList;
                 qint64 time = QDateTime::currentMSecsSinceEpoch();
-                bool change = json.value("change").toBool();
+                bool change = json.value("change").toBool(), daily = false;
 
                 if (!item.isNull())
-                    m_database->getData(item, json.value("start").toVariant().toLongLong(), json.value("end").toVariant().toLongLong(), change, dataList, hourList);
+                    m_database->getData(item, json.value("start").toVariant().toLongLong(), json.value("end").toVariant().toLongLong(), change, daily, dataList, hourList);
 
                 if (!hourList.count())
                 {
@@ -103,11 +103,12 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
                 else if (change)
                 {
                     QJsonArray timestamp, value;
+                    qint64 step = daily ? 86400000 : 3600000;
 
                     for (int i = 0; i < hourList.count(); i++)
                     {
                         const Database::HourRecord &record = hourList.at(i);
-                        bool next = i < hourList.count() - 1, hole = next && hourList.at(i + 1).timestamp - record.timestamp > 3600000;
+                        bool next = i < hourList.count() - 1, hole = next && hourList.at(i + 1).timestamp - record.timestamp > step;
 
                         timestamp.append(record.timestamp);
                         value.append((next && !hole ? hourList.at(i + 1).min.toDouble() : record.max.toDouble()) - record.min.toDouble());
@@ -115,11 +116,11 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
                         if (!hole)
                             continue;
 
-                        timestamp.append(hourList.at(i + 1).timestamp - 3600000);
+                        timestamp.append(hourList.at(i + 1).timestamp - step);
                         value.append(hourList.at(i + 1).min.toDouble() - record.max.toDouble());
                     }
 
-                    mqttPublish(mqttTopic("recorder"), {{"id", json.value("id").toString()}, {"time", QDateTime::currentMSecsSinceEpoch() - time}, {"timestamp", timestamp}, {"value", value}, {"change", true}});
+                    mqttPublish(mqttTopic("recorder"), {{"id", json.value("id").toString()}, {"time", QDateTime::currentMSecsSinceEpoch() - time}, {"timestamp", timestamp}, {"value", value}, {"change", true}, {"daily", daily}});
                 }
                 else
                 {
@@ -134,7 +135,7 @@ void Controller::mqttReceived(const QByteArray &message, const QMqttTopicName &t
                         max.append(record.max.toDouble());
                     }
 
-                    mqttPublish(mqttTopic("recorder"), {{"id", json.value("id").toString()}, {"time", QDateTime::currentMSecsSinceEpoch() - time}, {"timestamp", timestamp}, {"avg", avg}, {"min", min}, {"max", max}});
+                    mqttPublish(mqttTopic("recorder"), {{"id", json.value("id").toString()}, {"time", QDateTime::currentMSecsSinceEpoch() - time}, {"timestamp", timestamp}, {"avg", avg}, {"min", min}, {"max", max}, {"daily", daily}});
                 }
 
                 break;

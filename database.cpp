@@ -19,6 +19,7 @@ Database::Database(QSettings *config, QObject *parent) : QObject(parent), m_time
 
     m_db.setDatabaseName(config->value("database/file", "/opt/homed-recorder/homed-recorder.db").toString());
     m_days = static_cast <quint16> (config->value("database/days").toInt());
+    m_daily = config->value("database/daily", true).toBool();
     m_debug = config->value("database/debug", false).toBool();
     m_trigger = {"action", "event", "scene"};
 
@@ -143,14 +144,16 @@ void Database::insertData(const Item &item, const QString &value)
     item->setValue(value);
 }
 
-void Database::getData(const Item &item, qint64 start, qint64 end, bool change, QList <DataRecord> &dataList, QList <HourRecord> &hourList)
+void Database::getData(const Item &item, qint64 start, qint64 end, bool change, bool &daily, QList <DataRecord> &dataList, QList <HourRecord> &hourList)
 {
+    qint64 days = (QDateTime::currentMSecsSinceEpoch() - start) / 86400000, last = 0;
     QSqlQuery query(m_db);
     QString queryString;
     bool check = false;
-    qint64 last = 0;
 
-    if (start && m_days >= (QDateTime::currentMSecsSinceEpoch() - start) / 86400000 && !change)
+    daily = m_daily && start && days >= 90;
+
+    if (start && m_days >= days && !change && !daily)
     {
         queryString = QString("SELECT timestamp, value FROM %1.data WHERE item_id = %2").arg(m_schema).arg(item->id());
         query.exec(QString(queryString).append(" AND timestamp <= %1 ORDER BY id DESC LIMIT 1").arg(start));
@@ -161,13 +164,16 @@ void Database::getData(const Item &item, qint64 start, qint64 end, bool change, 
         check = true;
     }
     else
-        queryString = QString("SELECT timestamp, avg, min, max FROM %1.hour WHERE item_id = %2").arg(m_schema).arg(item->id());
+        queryString = QString("SELECT %1 FROM %2.hour WHERE item_id = %3").arg(daily ? QString("((timestamp - 1 + %1) / 86400000 + 1) * 86400000 - %1, AVG(avg), MIN(min), MAX(max)").arg(QDateTime::currentDateTime().offsetFromUtc() * 1000) : "timestamp, avg, min, max", m_schema).arg(item->id());
 
     if (start)
         queryString.append(QString(" AND timestamp > %1").arg(start));
 
     if (end)
         queryString.append(QString(" AND timestamp <= %1").arg(end));
+
+    if (daily)
+        queryString.append(" GROUP BY 1");
 
     query.exec(queryString);
 
