@@ -4,6 +4,7 @@
 Controller::Controller(const QString &configFile) : HOMEd(SERVICE_VERSION, configFile), m_database(new Database(getConfig(), this)), m_commands(QMetaEnum::fromType <Command> ())
 {
     connect(m_database, &Database::itemAdded, this, &Controller::itemAdded);
+    connect(m_database, &Database::publishItems, this, &Controller::publishItems);
 }
 
 Device Controller::findDevice(const QString &search)
@@ -13,16 +14,6 @@ Device Controller::findDevice(const QString &search)
             return it.value();
 
     return Device();
-}
-
-void Controller::publishItems(void)
-{
-    QJsonArray items;
-
-    for (auto it = m_database->items().begin(); it != m_database->items().end(); it++)
-        items.append(QJsonObject {{"endpoint", it.value()->endpoint()}, {"property", it.value()->property()}, {"debounce", QJsonValue::fromVariant(it.value()->debounce())}, {"threshold", it.value()->threshold()}});
-
-    mqttPublish(mqttTopic("status/recorder"), {{"items", items}, {"timestamp", QDateTime::currentSecsSinceEpoch()}, {"version", SERVICE_VERSION}}, true);
 }
 
 void Controller::mqttConnected(void)
@@ -300,4 +291,21 @@ void Controller::itemAdded(const Item &item)
     }
 
     mqttPublish(mqttTopic("command/%1").arg(device->topic().mid(0, device->topic().lastIndexOf('/'))), {{"action", "getProperties"}, {"device", device->topic().split('/').last()}, {"service", "recorder"}});
+}
+
+void Controller::publishItems(void)
+{
+    QJsonArray items;
+
+    for (auto it = m_database->items().begin(); it != m_database->items().end(); it++)
+    {
+        QJsonObject json = {{"endpoint", it.value()->endpoint()}, {"property", it.value()->property()}, {"debounce", QJsonValue::fromVariant(it.value()->debounce())}, {"threshold", it.value()->threshold()}};
+
+        if (it.value()->text())
+            json.insert("text", true);
+
+        items.append(json);
+    }
+
+    mqttPublish(mqttTopic("status/recorder"), {{"items", items}, {"timestamp", QDateTime::currentSecsSinceEpoch()}, {"version", SERVICE_VERSION}}, true);
 }

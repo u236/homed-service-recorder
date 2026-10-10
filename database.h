@@ -17,7 +17,7 @@ class ItemObject
 public:
 
     ItemObject(quint32 id, const QString &endpoint, const QString &property, quint32 debounce, double threshold) :
-        m_id(id), m_endpoint(endpoint), m_property(property), m_debounce(debounce), m_threshold(threshold), m_timestamp(0) {}
+        m_id(id), m_endpoint(endpoint), m_property(property), m_debounce(debounce), m_threshold(threshold), m_timestamp(0), m_text(false) {}
 
     inline quint32 id(void) { return m_id; }
     inline QString endpoint(void) { return m_endpoint; }
@@ -35,6 +35,11 @@ public:
     inline QString value(void) { return m_value; }
     inline void setValue(const QString value) { m_value = value; }
 
+    inline bool text(void) { return m_text; }
+
+    void checkText(void);
+    bool checkValue(const QString &value);
+
     bool skip(qint64 timestamp, double value);
 
 private:
@@ -47,6 +52,8 @@ private:
 
     qint64 m_timestamp;
     QString m_value;
+
+    bool m_text;
 
 };
 
@@ -103,6 +110,7 @@ private slots:
 signals:
 
     void itemAdded(const Item &item);
+    void publishItems(void);
 
 };
 

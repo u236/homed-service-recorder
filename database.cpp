@@ -1,6 +1,24 @@
 #include "database.h"
 #include "logger.h"
 
+void ItemObject::checkText(void)
+{
+    bool check;
+    m_value.toDouble(&check);
+
+    if (check || m_value == UNAVAILABLE_STRING)
+        return;
+
+    m_text = true;
+}
+
+bool ItemObject::checkValue(const QString &value)
+{
+    bool check;
+    value.toDouble(&check);
+    return m_text || check || value == UNAVAILABLE_STRING;
+}
+
 bool ItemObject::skip(qint64 timestamp, double value)
 {
     if (timestamp < m_timestamp + m_debounce * 1000)
@@ -51,11 +69,19 @@ Database::Database(QSettings *config, QObject *parent) : QObject(parent), m_time
     query.exec(QString("CREATE TABLE IF NOT EXISTS %1.hour (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, timestamp INTEGER NOT NULL, avg REAL NOT NULL, min REAL NOT NULL, max REAL NOT NULL)").arg(m_schema));
     query.exec("CREATE UNIQUE INDEX main.item_index ON item (endpoint, property)");
 
-    query.exec("SELECT * FROM main.item");
+    query.exec(QString("SELECT item.*, data.timestamp, data.value FROM main.item LEFT JOIN %1.data ON data.id = (SELECT id FROM %1.data WHERE item_id = item.id ORDER BY id DESC LIMIT 1)").arg(m_schema));
 
     while (query.next())
     {
         Item item(new ItemObject(static_cast <quint32> (query.value(0).toInt()), query.value(1).toString(), query.value(2).toString(), static_cast <quint32> (query.value(3).toInt()), query.value(4).toDouble()));
+
+        if (!query.value(5).isNull())
+        {
+            item->setTimestamp(query.value(5).toLongLong());
+            item->setValue(query.value(6).toString());
+            item->checkText();
+        }
+
         m_items.insert(QString("%1/%2").arg(item->endpoint(), item->property()), item);
     }
 
@@ -115,17 +141,7 @@ bool Database::removeItem(const QString &endpoint, const QString &property)
 void Database::insertData(const Item &item, const QString &value)
 {
     qint64 timestamp = QDateTime::currentMSecsSinceEpoch();
-
-    if (!item->timestamp())
-    {
-        QSqlQuery query(QString("SELECT timestamp, value FROM %1.data WHERE item_id = %2 ORDER BY id DESC LIMIT 1").arg(m_schema).arg(item->id()), m_db);
-
-        if (query.first())
-        {
-            item->setTimestamp(query.value(0).toLongLong());
-            item->setValue(query.value(1).toString());
-        }
-    }
+    bool check = item->value().isEmpty() || item->value() == UNAVAILABLE_STRING;
 
     if (item->timestamp() > timestamp || (item->value() == value && !m_trigger.contains(item->property().split('_').value(0))) || (value != UNAVAILABLE_STRING && item->value() != UNAVAILABLE_STRING && item->skip(timestamp, value.toDouble())))
     {
@@ -142,6 +158,16 @@ void Database::insertData(const Item &item, const QString &value)
 
     item->setTimestamp(timestamp);
     item->setValue(value);
+
+    if (!check)
+        return;
+
+    item->checkText();
+
+    if (!item->text())
+        return;
+
+    emit publishItems();
 }
 
 void Database::getData(const Item &item, qint64 start, qint64 end, bool change, bool &daily, QList <DataRecord> &dataList, QList <HourRecord> &hourList)
@@ -153,12 +179,12 @@ void Database::getData(const Item &item, qint64 start, qint64 end, bool change, 
 
     daily = m_daily && start && days >= 90;
 
-    if (start && m_days >= days && !change && !daily)
+    if (start && (item->text() || (m_days >= days && !change && !daily)))
     {
         queryString = QString("SELECT timestamp, value FROM %1.data WHERE item_id = %2").arg(m_schema).arg(item->id());
         query.exec(QString(queryString).append(" AND timestamp <= %1 ORDER BY id DESC LIMIT 1").arg(start));
 
-        if (query.first())
+        if (query.first() && item->checkValue(query.value(1).toString()))
             dataList.append({item->id(), query.value(0).toLongLong(), query.value(1).toString()});
 
         check = true;
@@ -181,7 +207,7 @@ void Database::getData(const Item &item, qint64 start, qint64 end, bool change, 
     {
         qint64 timestamp = query.value(0).toLongLong();
 
-        if (last > timestamp)
+        if (last > timestamp || (check && !item->checkValue(query.value(1).toString())))
             continue;
 
         if (check)
@@ -219,25 +245,13 @@ void Database::update(void)
         query.exec(QString("REINDEX %1.data").arg(m_schema));
     }
 
-    query.exec(QString("SELECT item.id, AVG(data.value), MIN(CAST(data.value AS REAL)), MAX(CAST(data.value AS REAL)), MIN(data.value), MAX(data.value) FROM main.item item LEFT JOIN %1.data data ON data.item_id = item.id AND data.timestamp > %2 AND data.value != '%3' GROUP by item.id").arg(m_schema).arg((timestamp - 3600) * 1000).arg(UNAVAILABLE_STRING));
+    query.exec(QString("SELECT item.id, AVG(data.value), MIN(CAST(data.value AS REAL)), MAX(CAST(data.value AS REAL)) FROM main.item LEFT JOIN %1.data ON data.item_id = item.id AND data.timestamp > %2 AND CAST(data.value AS REAL) = data.value GROUP by item.id").arg(m_schema).arg((timestamp - 3600) * 1000));
 
     while (query.next())
     {
         quint32 id = static_cast <quint32> (query.value(0).toInt());
 
-        if (query.value(1).type() == QVariant::Double)
-        {
-            bool min, max;
-
-            query.value(4).toString().toDouble(&min);
-            query.value(5).toString().toDouble(&max);
-
-            if (!min || !max)
-                continue;
-
-            m_hourQueue.enqueue({id, timestamp * 1000, query.value(1).toString(), query.value(2).toString(), query.value(3).toString()});
-        }
-        else
+        if (query.value(1).type() != QVariant::Double)
         {
             QSqlQuery query(QString("SELECT value FROM %1.data WHERE item_id = %2 ORDER BY id DESC limit 1").arg(m_schema).arg(id), m_db);
 
@@ -246,11 +260,13 @@ void Database::update(void)
 
             query.exec(QString("SELECT avg, min, max FROM %1.hour WHERE item_id = %2 ORDER BY id DESC limit 1").arg(m_schema).arg(id));
 
-            if (!query.first())
-                continue;
+            if (query.first())
+                m_hourQueue.enqueue({id, timestamp * 1000, query.value(0).toString(), query.value(1).toString(), query.value(2).toString()});
 
-            m_hourQueue.enqueue({id, timestamp * 1000, query.value(0).toString(), query.value(1).toString(), query.value(2).toString()});
+            continue;
         }
+
+        m_hourQueue.enqueue({id, timestamp * 1000, query.value(1).toString(), query.value(2).toString(), query.value(3).toString()});
     }
 
     query.exec("BEGIN TRANSACTION");

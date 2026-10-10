@@ -1,7 +1,7 @@
 #ifndef CONTROLLER_H
 #define CONTROLLER_H
 
-#define SERVICE_VERSION     "1.3.0"
+#define SERVICE_VERSION     "1.4.0"
 
 #include "database.h"
 #include "homed.h"
@@ -65,7 +65,6 @@ private:
     QMap <QString, Device> m_devices;
 
     Device findDevice(const QString &search);
-    void publishItems(void);
 
 private slots:
 
@@ -73,6 +72,7 @@ private slots:
     void mqttReceived(const QByteArray &message, const QMqttTopicName &topic) override;
 
     void itemAdded(const Item &item);
+    void publishItems(void);
 
 };
 
